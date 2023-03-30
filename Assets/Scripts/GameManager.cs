@@ -4,21 +4,26 @@ using UnityEngine;
 using UnityEngine.UI;
 using Photon.Pun;
 using Photon.Realtime;
+using Photon.Chat;
+using ExitGames.Client.Photon;
 
-public class GameManager : MonoBehaviourPunCallbacks
+public class GameManager : MonoBehaviourPunCallbacks, IChatClientListener
 {
     public static GameManager instance;
+    private ChatClient chatClient;
     public GameObject ConnectedPanel;
     public GameObject LobbyPanel;
     public GameObject roomPanel;
+    public GameObject contentBox;
     public InputField inputName;
     public Button[] cellBtns;
     public Button prevBtn, nextBtn, createRoomButton;
-    public InputField inputRoomName, chatInput;
+    public InputField inputRoomName, chatInput, lobbyInput;
     public Text lobbyStatus;
     public Text roomStatus;
+    public Text lobbyChatText, channelText;
     public List<RoomInfo> list = new List<RoomInfo>();
-    float refreshTime = 0;
+    string currentChannelName;
     RoomOptions roomOptions;
     public Text[] chatTexts;
     PhotonView PV;
@@ -43,22 +48,31 @@ public class GameManager : MonoBehaviourPunCallbacks
         roomOptions = new RoomOptions();
         roomOptions.MaxPlayers = 5;
         RefreshRoomList();
+
+        Application.runInBackground = true;
+        chatClient = new ChatClient(this);
+        chatClient.UseBackgroundWorkerForSending = true;
+        currentChannelName = "lobby1";
     }
 
     // Update is called once per frame
     void Update()
     {
+        chatClient.Service();
         lobbyStatus.text = (PhotonNetwork.CountOfPlayers - PhotonNetwork.CountOfPlayersInRooms) + "로비 / " + PhotonNetwork.CountOfPlayers + "접속";
     }
+
     public void Connect()
     {
         PhotonNetwork.LocalPlayer.NickName = inputName.text;
         PhotonNetwork.ConnectUsingSettings();
+        chatClient.Connect(PhotonNetwork.PhotonServerSettings.AppSettings.AppIdChat, "1.0", new Photon.Chat.AuthenticationValues(PhotonNetwork.LocalPlayer.NickName));
     }
 
     public void LeaveRoom()
     {
         PhotonNetwork.LeaveRoom();
+        chatClient.Connect(PhotonNetwork.PhotonServerSettings.AppSettings.AppIdChat, "1.0", new Photon.Chat.AuthenticationValues(PhotonNetwork.LocalPlayer.NickName));
         SetPanel(LobbyPanel);
     }
 
@@ -71,11 +85,15 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnJoinedLobby()
     {
         print("로비 접속 완료");
+        //AddLine(string.Format("연결시도 : ({0})", PhotonNetwork.LocalPlayer.NickName));
         SetPanel(LobbyPanel);
     }
+
+    [ContextMenu("방생성")]
     public void CreateRoom()
     {
         PhotonNetwork.CreateRoom(inputRoomName.text == "" ? "Room" + Random.Range(0,100) : inputRoomName.text, roomOptions, null);
+        inputRoomName.text = "";
     }
 
     public void JoinRoom(string name)
@@ -86,6 +104,7 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     public override void OnJoinedRoom()
     {
+        chatClient.Disconnect();
         SetPanel(roomPanel);
         RefreshRoom();
         chatInput.text = "";
@@ -195,6 +214,122 @@ public class GameManager : MonoBehaviourPunCallbacks
             }
             chatTexts[chatTexts.Length - 1].text = msg;
         }
+    }
+
+    public void AddLine(Text txt, string lineString)
+    {
+        txt.text = lineString;
+    }
+
+    public void DebugReturn(DebugLevel level, string message)
+    {
+        if (level == ExitGames.Client.Photon.DebugLevel.ERROR)
+        {
+            Debug.LogError(message);
+        }
+        else if (level == ExitGames.Client.Photon.DebugLevel.WARNING)
+        {
+            Debug.LogWarning(message);
+        }
+        else
+        {
+            Debug.Log(message);
+        }
+    }
+
+    public void OnConnected()
+    {
+        chatClient.Subscribe(new string[] { currentChannelName }, 14);
+    }
+
+
+    public void OnDisconnected()
+    {
+        AddLine(channelText, "현재 채널 : 접속중...");
+    }
+
+    public void OnChatStateChange(ChatState state)
+    {
+        Debug.Log("OnChatStateChange = " + state);
+    }
+
+    public void OnGetMessages(string channelName, string[] senders, object[] messages)
+    {
+        if (channelName.Equals(currentChannelName))
+        {
+            ShowChannel(currentChannelName);
+        }
+        SizeDelta();
+    }
+
+    public void ShowChannel(string channelName)
+    {
+        if (string.IsNullOrEmpty(channelName)) return;
+        ChatChannel channel = null;
+        bool found = chatClient.TryGetChannel(channelName, out channel);
+        if (!found)
+        {
+            Debug.Log("ShowChannel failed to find channel : " + channelName);
+            return;
+        }
+        currentChannelName = channelName;
+        lobbyChatText.text = channel.ToStringMessages();
+        Debug.Log("ShowChannel : " + currentChannelName);
+    }
+
+    public void OnEnterSend()
+    {
+        SendChatMessage(lobbyInput.text);
+        lobbyInput.text = "";
+        lobbyInput.Select();
+        contentBox.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, contentBox.GetComponent<RectTransform>().sizeDelta.y - 266);
+    }
+
+    public void SendChatMessage(string inputLine)
+    {
+        if (string.IsNullOrEmpty(inputLine)) return;
+
+        chatClient.PublishMessage(currentChannelName, inputLine);
+    }
+
+    public void OnPrivateMessage(string sender, object message, string channelName)
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public void OnSubscribed(string[] channels, bool[] results)
+    {
+        AddLine(channelText, string.Format("현재 채널 : {0}", string.Join(",", channels)));
+        SizeDelta();
+    }
+
+    public void OnUnsubscribed(string[] channels)
+    {
+        AddLine(channelText, string.Format("채널 퇴장 ({0})", string.Join(",", channels)));
+    }
+
+    public void OnStatusUpdate(string user, int status, bool gotMessage, object message)
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public void OnUserSubscribed(string channel, string user)
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public void OnUserUnsubscribed(string channel, string user)
+    {
+        throw new System.NotImplementedException();
+    }
+
+    public void SizeDelta()
+    {
+        if(lobbyChatText.rectTransform.sizeDelta.y < 250)
+        {
+            return;
+        }
+        contentBox.GetComponent<RectTransform>().sizeDelta = new Vector2(contentBox.GetComponent<RectTransform>().sizeDelta.x, lobbyChatText.rectTransform.sizeDelta.y+16);
     }
 
     //public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)

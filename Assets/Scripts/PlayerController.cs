@@ -45,6 +45,7 @@ public class PlayerController : MonoBehaviourPun, IPunObservable
 
         if (isMoving)
         {
+            Follow();
             rigid.velocity = new Vector2(4 * x, rigid.velocity.y);
             ani.SetBool("Walk", true);
 
@@ -105,6 +106,12 @@ public class PlayerController : MonoBehaviourPun, IPunObservable
         bullet.GetComponent<BulletController>().dir = spriteRenderer.flipX ? -1 : 1;
         yield return new WaitForSeconds(0.1f);
         ani.SetBool("Fire", false);
+    }
+
+    void Follow()
+    {
+        GameManager.instance.cam.transform.
+        transform.localPosition = transform.position;
     }
 
     public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)

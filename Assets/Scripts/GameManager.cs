@@ -11,6 +11,7 @@ public class GameManager : MonoBehaviourPunCallbacks, IChatClientListener
 {
     public static GameManager instance;
     private ChatClient chatClient;
+    public GameObject gamePanel;
     public GameObject ConnectedPanel;
     public GameObject LobbyPanel;
     public GameObject roomPanel;
@@ -27,6 +28,8 @@ public class GameManager : MonoBehaviourPunCallbacks, IChatClientListener
     RoomOptions roomOptions;
     public Text[] chatTexts;
     PhotonView PV;
+    public GameObject[] spawnPoints;
+    public GameObject cam;
 
     int currentPage = 1, maxPage, multiple;
 
@@ -187,10 +190,22 @@ public class GameManager : MonoBehaviourPunCallbacks, IChatClientListener
         panel.SetActive(true);
     }
 
+    public void SetGamePanel(GameObject panel, bool isSet)
+    {
+        panel.SetActive(isSet);
+    }
+
     public void SendMessage()
     {
         PV.RPC("ChatRPC", RpcTarget.All, PhotonNetwork.NickName + " : " + chatInput.text);
         chatInput.text = "";
+    }
+
+    public void Spawn()
+    {
+        int r = Random.Range(0, spawnPoints.Length);
+        PhotonNetwork.Instantiate("Player", spawnPoints[r].transform.position, Quaternion.identity);
+        SetGamePanel(gamePanel, false);
     }
 
     [PunRPC]
